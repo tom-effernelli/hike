@@ -178,5 +178,6 @@ def build_dataset() -> Dataset:
     return final_ds
 
 if __name__ == "__main__":
+    random.seed(42)
     # Execute the pipeline
     dataset = build_dataset()
