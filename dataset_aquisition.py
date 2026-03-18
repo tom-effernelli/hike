@@ -179,4 +179,4 @@ def build_dataset() -> Dataset:
 
 if __name__ == "__main__":
     # Execute the pipeline
-    security_breach_dataset = build_dataset()
+    dataset = build_dataset()
