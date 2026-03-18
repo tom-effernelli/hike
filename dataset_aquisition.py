@@ -5,10 +5,19 @@ from datasets import load_dataset, Dataset
 from datasketch import MinHash, MinHashLSH
 
 # ==========================================
+# 0. CONFIGURATION
+# ==========================================
+
+BATCH_SIZE = 1000
+MIN_HASH_THRESHOLD = 0.90
+NUM_PERM = 128
+OUTPUT_PATH = "./security_breach_dataset_arrow"
+
+# ==========================================
 # 1. HELPER FUNCTIONS (Transformation & Hashing)
 # ==========================================
 
-def get_minhash(code_string: str, num_perm: int = 128) -> MinHash:
+def get_minhash(code_string: str, num_perm: int = NUM_PERM) -> MinHash:
     """
     Create a MinHash signature for a code snippet based on trigrams.
     This allows for fuzzy matching of code snippets.
@@ -111,7 +120,7 @@ def batch_augment(batch: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
 # 3. MAIN PIPELINE
 # ==========================================
 
-def build_dataset_scalable() -> Dataset:
+def build_dataset() -> Dataset:
     """
     Main orchestration function.
     Downloads, normalizes, deduplicates, augments, and saves the dataset.
@@ -127,14 +136,14 @@ def build_dataset_scalable() -> Dataset:
     norm_ds = raw_ds.map(
         batch_normalize, 
         batched=True, 
-        batch_size=1000, 
+        batch_size=BATCH_SIZE, 
         remove_columns=raw_ds.column_names
     )
     print(f"    -> {len(norm_ds)} entries after normalization.")
 
     # --- STEP 2: SCALABLE DEDUPLICATION ---
     print("[*] 2. Deduplication using MinHash LSH...")
-    lsh = MinHashLSH(threshold=0.90, num_perm=128)
+    lsh = MinHashLSH(threshold=MIN_HASH_THRESHOLD, num_perm=NUM_PERM)
     
     def is_unique(example: Dict[str, Any], idx: int) -> bool:
         """
@@ -154,11 +163,11 @@ def build_dataset_scalable() -> Dataset:
 
     # --- STEP 3: SCALABLE AUGMENTATION ---
     print("[*] 3. Data Augmentation in progress...")
-    final_ds = dedup_ds.map(batch_augment, batched=True, batch_size=1000)
+    final_ds = dedup_ds.map(batch_augment, batched=True, batch_size=BATCH_SIZE)
     print(f"    -> {len(final_ds)} final entries ready for training.")
     
     # --- STEP 4: SAVE TO DISK ---
-    output_path = "./my_cyber_dataset_arrow"
+    output_path = OUTPUT_PATH
     final_ds.save_to_disk(output_path)
     print(f"[*] Dataset successfully saved to '{output_path}'")
     
@@ -166,4 +175,4 @@ def build_dataset_scalable() -> Dataset:
 
 if __name__ == "__main__":
     # Execute the pipeline
-    my_cyber_dataset = build_dataset_scalable()
+    security_breach_dataset = build_dataset()
