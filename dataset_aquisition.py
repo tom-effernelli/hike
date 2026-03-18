@@ -12,6 +12,7 @@ BATCH_SIZE = 1000
 MIN_HASH_THRESHOLD = 0.90
 NUM_PERM = 128
 OUTPUT_PATH = "./security_breach_dataset_arrow"
+SCRIPT_TESTING = True
 
 # ==========================================
 # 1. HELPER FUNCTIONS (Transformation & Hashing)
@@ -127,7 +128,10 @@ def build_dataset() -> Dataset:
     """
     print("[*] Loading raw dataset (Lazy Loading)...")
     # Load the complete dataset. It is not loaded into RAM, just memory-mapped from disk.
-    raw_ds = load_dataset("bstee615/bigvul", split="train[:10000]")
+    if SCRIPT_TESTING:
+        raw_ds = load_dataset("bstee615/bigvul", split="train[:10000]")
+    else:
+        raw_ds = load_dataset("bstee615/bigvul", split="train")
     
     # --- STEP 1: SCALABLE NORMALIZATION ---
     print("[*] 1. Normalization in progress (on disk)...")
