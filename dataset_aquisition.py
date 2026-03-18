@@ -1,53 +1,34 @@
 import re
 import random
-from datasets import load_dataset
+from typing import Dict, List, Any
+from datasets import load_dataset, Dataset
 from datasketch import MinHash, MinHashLSH
 
 # ==========================================
-# 1. NORMALIZATION (Unified Format)
+# 1. HELPER FUNCTIONS (Transformation & Hashing)
 # ==========================================
-def normalize_bigvul(example):
-    """Convert one BigVul row into two entries (Vulnerable = 1, Patched = 0)"""
-    records = []
-    # Vulnerable entry
-    if example['func_before']:
-        records.append({
-            "code": example['func_before'],
-            "label": 1,
-            "cwe": example['cwe_id'],
-            "source": "bigvul"
-        })
-    # Patched (safe) entry
-    if example['func_after']:
-        records.append({
-            "code": example['func_after'],
-            "label": 0,
-            "cwe": example['cwe_id'], # The patch relates to this CWE
-            "source": "bigvul"
-        })
-    return records
 
-# ==========================================
-# 2. SMART DEDUPLICATION (MinHash LSH)
-# ==========================================
-def get_minhash(code_string, num_perm=128):
-    """Create a MinHash signature for a code snippet (based on trigrams)."""
+def get_minhash(code_string: str, num_perm: int = 128) -> MinHash:
+    """
+    Create a MinHash signature for a code snippet based on trigrams.
+    This allows for fuzzy matching of code snippets.
+    """
     m = MinHash(num_perm=num_perm)
-    # Remove repeated whitespace and do a basic tokenization
+    
+    # Remove repeated whitespace and perform basic tokenization
     tokens = re.sub(r'\s+', ' ', code_string).split(' ')
-    # Create 3-grams to capture structure
+    
+    # Create 3-grams (shingles) to capture structural semantics
     for i in range(len(tokens) - 2):
         shingle = f"{tokens[i]} {tokens[i+1]} {tokens[i+2]}".encode('utf8')
         m.update(shingle)
+        
     return m
 
-# ==========================================
-# 3. DATA AUGMENTATION
-# ==========================================
-def augment_code(code_string):
+def augment_code(code_string: str) -> str:
     """
-    Apply semantically neutral transformations to make
-    the AI robust to coding style.
+    Apply semantically neutral transformations to prevent the AI 
+    from overfitting to specific coding styles or variable names.
     """
     augmented = code_string
     
@@ -65,66 +46,124 @@ def augment_code(code_string):
     return augmented
 
 # ==========================================
-# MAIN SCRIPT
+# 2. BATCH PROCESSING FUNCTIONS (Hugging Face mapped functions)
 # ==========================================
-def build_dataset():
-    print("[*] Loading raw datasets...")
-    # Load BigVul (take only the first 2000 for testing)
-    bigvul_raw = load_dataset("bstee615/bigvul", split="train[:2000]")
+
+def batch_normalize(batch: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
+    """
+    Process a batch of raw BigVul rows and map them to a unified format.
+    Splits the 'before' and 'after' code states into distinct entries.
+    """
+    new_codes, new_labels, new_cwes, new_sources = [], [], [], []
     
-    print("[*] 1. Normalization...")
-    unified_data = []
-    for row in bigvul_raw:
-        unified_data.extend(normalize_bigvul(row))
+    # Iterate through the lists provided in the batch
+    for before, after, cwe in zip(batch['func_before'], batch['func_after'], batch['CWE ID']):
+        # Vulnerable entry (Label = 1)
+        if before:
+            new_codes.append(before)
+            new_labels.append(1)
+            new_cwes.append(cwe)
+            new_sources.append("bigvul")
+            
+        # Patched/Safe entry (Label = 0)
+        if after:
+            new_codes.append(after)
+            new_labels.append(0)
+            new_cwes.append(cwe)
+            new_sources.append("bigvul")
+            
+    return {
+        "code": new_codes, 
+        "label": new_labels, 
+        "cwe": new_cwes, 
+        "source": new_sources
+    }
+
+def batch_augment(batch: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
+    """
+    Process a batch of normalized code and randomly generate 
+    augmented versions to enrich the dataset.
+    """
+    aug_codes, aug_labels, aug_cwes, aug_sources = [], [], [], []
+    
+    for code, label, cwe, source in zip(batch['code'], batch['label'], batch['cwe'], batch['source']):
+        # Always keep the original entry
+        aug_codes.append(code)
+        aug_labels.append(label)
+        aug_cwes.append(cwe)
+        aug_sources.append(source)
         
-    print(f"    -> {len(unified_data)} entries after normalization.")
-
-    print("[*] 2. Deduplication (MinHash LSH)...")
-    # threshold=0.9 means if two code snippets are 90% similar, we drop the second
-    lsh = MinHashLSH(threshold=0.90, num_perm=128)
-    deduplicated_data = []
-    seen_signatures = set()
-
-    for idx, item in enumerate(unified_data):
-        code = item["code"]
-        m = get_minhash(code)
-        
-        # Check whether a 90%+ similar snippet already exists
-        result = lsh.query(m)
-        if not result:
-            # New snippet, keep it
-            lsh.insert(str(idx), m)
-            deduplicated_data.append(item)
-        else:
-            # Near-duplicate, drop it
-            pass 
-
-    print(f"    -> {len(deduplicated_data)} entries after deduplication.")
-
-    print("[*] 3. Data Augmentation...")
-    final_dataset = []
-    for item in deduplicated_data:
-        # Always keep the original
-        final_dataset.append(item)
-        
-        # Create an augmented version ~1 time out of 3 (to avoid inflating the dataset too much)
+        # Create an augmented version ~33% of the time to avoid extreme inflation
         if random.random() > 0.66:
-            aug_item = item.copy()
-            aug_item["code"] = augment_code(item["code"])
-            aug_item["source"] = item["source"] + "_augmented"
-            final_dataset.append(aug_item)
+            aug_codes.append(augment_code(code))
+            aug_labels.append(label)
+            aug_cwes.append(cwe)
+            aug_sources.append(source + "_augmented")
+            
+    return {
+        "code": aug_codes, 
+        "label": aug_labels, 
+        "cwe": aug_cwes, 
+        "source": aug_sources
+    }
 
-    print(f"    -> {len(final_dataset)} final entries ready for training.")
+# ==========================================
+# 3. MAIN PIPELINE
+# ==========================================
+
+def build_dataset_scalable() -> Dataset:
+    """
+    Main orchestration function.
+    Downloads, normalizes, deduplicates, augments, and saves the dataset.
+    """
+    print("[*] Loading raw dataset (Lazy Loading)...")
+    # Load the complete dataset. It is not loaded into RAM, just memory-mapped from disk.
+    raw_ds = load_dataset("bstee615/bigvul", split="train[:10000]")
     
-    # Quick preview of the result
-    print("\n[*] Example final entry:")
-    print(final_dataset[-1])
+    # --- STEP 1: SCALABLE NORMALIZATION ---
+    print("[*] 1. Normalization in progress (on disk)...")
+    # batched=True allows changing the number of rows (e.g., 1 row -> 2 rows)
+    # remove_columns destroys the old schema to enforce the new one
+    norm_ds = raw_ds.map(
+        batch_normalize, 
+        batched=True, 
+        batch_size=1000, 
+        remove_columns=raw_ds.column_names
+    )
+    print(f"    -> {len(norm_ds)} entries after normalization.")
+
+    # --- STEP 2: SCALABLE DEDUPLICATION ---
+    print("[*] 2. Deduplication using MinHash LSH...")
+    lsh = MinHashLSH(threshold=0.90, num_perm=128)
     
-    return final_dataset
+    def is_unique(example: Dict[str, Any], idx: int) -> bool:
+        """
+        Stateful filter: keeps the LSH index in RAM while reading code from disk.
+        Returns True if the snippet is unique, False if it's a duplicate.
+        """
+        m = get_minhash(example["code"])
+        if lsh.query(m):
+            return False  # Near-duplicate found, drop it
+            
+        lsh.insert(str(idx), m)
+        return True  # Unseen snippet, keep it
+
+    # The dataset is filtered on the fly.
+    dedup_ds = norm_ds.filter(is_unique, with_indices=True)
+    print(f"    -> {len(dedup_ds)} entries after deduplication.")
+
+    # --- STEP 3: SCALABLE AUGMENTATION ---
+    print("[*] 3. Data Augmentation in progress...")
+    final_ds = dedup_ds.map(batch_augment, batched=True, batch_size=1000)
+    print(f"    -> {len(final_ds)} final entries ready for training.")
+    
+    # --- STEP 4: SAVE TO DISK ---
+    output_path = "./my_cyber_dataset_arrow"
+    final_ds.save_to_disk(output_path)
+    print(f"[*] Dataset successfully saved to '{output_path}'")
+    
+    return final_ds
 
 if __name__ == "__main__":
-    my_cyber_dataset = build_dataset()
-    # You can then save it with pandas:
-    # import pandas as pd
-    # df = pd.DataFrame(my_cyber_dataset)
-    # df.to_parquet("my_cyber_dataset_v1.parquet")
+    # Execute the pipeline
+    my_cyber_dataset = build_dataset_scalable()
