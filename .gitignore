@@ -1,0 +1,7 @@
+data/
+model_checkpoints/
+__pycache__/
+*.pyc
+.venv/
+.idea/
+.vscode/

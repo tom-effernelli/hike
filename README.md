@@ -20,6 +20,11 @@ The project processes the BigVul dataset to train a binary classifier. It addres
 ├── data/                       # Local data storage (Git ignored)
 │   ├── security_breach_dataset_arrow/
 │   └── tokenized_dataset_arrow/
+├── model_checkpoints/          # Model checkpoints (Git ignored)
+│   ├── checkpoint-500/
+│   ├── checkpoint-1000/
+│   ├── ...
+│   └── final_model/
 ├── src/
 │   ├── __init__.py
 │   ├── config.py               # Global constants and hyperparameters

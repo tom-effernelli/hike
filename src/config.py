@@ -44,6 +44,7 @@ MAX_SEQ_LENGTH = 512
 TRAIN_BATCH_SIZE = 16
 LEARNING_RATE = 2e-5
 NUM_EPOCHS = 3
+AUGMENT_THRESHOLD = 0.66
 
 # ==========================================
 # 4. ACQUISITION SETTINGS (Step 1)
