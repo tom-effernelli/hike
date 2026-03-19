@@ -95,7 +95,7 @@ def batch_augment(batch: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
         aug_cwes.append(cwe)
         aug_sources.append(source)
         
-        # Create an augmented version ~33% of the time to avoid extreme inflation
+        # Create an augmented version ~(1-AUGMENT_THRESHOLD)*100% of the time to avoid extreme inflation
         if random.random() > config.AUGMENT_THRESHOLD:
             aug_codes.append(augment_code(code))
             aug_labels.append(label)
