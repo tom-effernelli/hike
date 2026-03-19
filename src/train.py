@@ -99,7 +99,7 @@ def run_training():
     final_model_path = os.path.join(config.MODEL_OUTPUT_DIR, "final_vulnerability_model")
     print(f"\n[*] Training complete! Saving the best model to: {final_model_path}")
     trainer.save_model(final_model_path)
-    print("[*] Pipeline finished successfully. 🚀")
+    print("[*] Pipeline finished successfully.")
 
 if __name__ == "__main__":
     run_training()
