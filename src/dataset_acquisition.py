@@ -1,4 +1,4 @@
-# src/dataset_aquisition.py
+# src/dataset_acquisition.py
 import re
 import random
 from typing import Dict, List, Any
@@ -40,7 +40,6 @@ def augment_code(code_string: str) -> str:
         augmented = random.choice(noise) + "\n" + augmented
         
     # Strategy B: Basic obfuscation of common variable names
-    # (e.g., change 'buf' or 'buffer' into 'data_chunk')
     if random.random() > 0.5:
         augmented = re.sub(r'\bbuffer\b', 'data_chunk', augmented)
         augmented = re.sub(r'\bbuf\b', 'd_buf', augmented)
@@ -58,7 +57,6 @@ def batch_normalize(batch: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
     """
     new_codes, new_labels, new_cwes, new_sources = [], [], [], []
     
-    # Iterate through the lists provided in the batch
     for before, after, cwe in zip(batch['func_before'], batch['func_after'], batch['CWE ID']):
         # Vulnerable entry (Label = 1)
         if before:
@@ -95,7 +93,7 @@ def batch_augment(batch: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
         aug_cwes.append(cwe)
         aug_sources.append(source)
         
-        # Create an augmented version ~(1-AUGMENT_THRESHOLD)*100% of the time to avoid extreme inflation
+        # Create an augmented version ~(1-AUGMENT_THRESHOLD)*100% of the time
         if random.random() > config.AUGMENT_THRESHOLD:
             aug_codes.append(augment_code(code))
             aug_labels.append(label)
@@ -116,10 +114,8 @@ def batch_augment(batch: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
 def build_dataset() -> Dataset:
     """
     Main orchestration function.
-    Downloads, normalizes, deduplicates, augments, and saves the dataset.
     """
     print("[*] Loading raw dataset (Lazy Loading)...")
-    # Load the complete dataset. It is not loaded into RAM, just memory-mapped from disk.
     if config.SCRIPT_TESTING:
         raw_ds = load_dataset("bstee615/bigvul", split="train[:10000]")
     else:
@@ -127,8 +123,7 @@ def build_dataset() -> Dataset:
     
     # --- STEP 1: SCALABLE NORMALIZATION ---
     print("[*] 1. Normalization in progress (on disk)...")
-    # batched=True allows changing the number of rows (e.g., 1 row -> 2 rows)
-    # remove_columns destroys the old schema to enforce the new one
+    # CORRECTION ICI: assignation à norm_ds et non dedup_ds
     norm_ds = raw_ds.map(
         batch_normalize, 
         batched=True, 
@@ -137,23 +132,32 @@ def build_dataset() -> Dataset:
     )
     print(f"    -> {len(norm_ds)} entries after normalization.")
 
-    # --- STEP 2: SCALABLE DEDUPLICATION ---
-    print("[*] 2. Deduplication using MinHash LSH...")
-    lsh = MinHashLSH(threshold=config.MIN_HASH_THRESHOLD, num_perm=config.NUM_PERM)
+    # --- STEP 2: SCALABLE DEDUPLICATION (Per Label) ---
+    print("[*] 2. Deduplication using MinHash LSH (Separated by Label)...")
+    
+    # Création de deux index LSH distincts : un pour 0 (Sain), un pour 1 (Vulnérable)
+    lsh_indices = {
+        0: MinHashLSH(threshold=config.MIN_HASH_THRESHOLD, num_perm=config.NUM_PERM),
+        1: MinHashLSH(threshold=config.MIN_HASH_THRESHOLD, num_perm=config.NUM_PERM)
+    }
     
     def is_unique(example: Dict[str, Any], idx: int) -> bool:
         """
         Stateful filter: keeps the LSH index in RAM while reading code from disk.
-        Returns True if the snippet is unique, False if it's a duplicate.
+        Returns True if the snippet is unique WITHIN ITS LABEL.
         """
+        label = example["label"]
         m = get_minhash(example["code"])
-        if lsh.query(m):
-            return False  # Near-duplicate found, drop it
+        
+        # On interroge uniquement l'index LSH correspondant à son propre label
+        if lsh_indices[label].query(m):
+            return False  # Doublon trouvé dans la MÊME classe -> on rejette
             
-        lsh.insert(str(idx), m)
-        return True  # Unseen snippet, keep it
+        # Si c'est nouveau, on l'ajoute à l'index de sa classe -> on garde
+        lsh_indices[label].insert(str(idx), m)
+        return True
 
-    # The dataset is filtered on the fly.
+    # Le dataset est filtré à la volée
     dedup_ds = norm_ds.filter(is_unique, with_indices=True)
     print(f"    -> {len(dedup_ds)} entries after deduplication.")
 
