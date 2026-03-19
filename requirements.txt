@@ -1,0 +1,22 @@
+# ==========================================
+# Data Processing & Pipeline
+# ==========================================
+datasets>=2.16.0
+datasketch>=1.6.4
+numpy>=1.24.0
+pandas>=2.0.0
+
+# ==========================================
+# Machine Learning & NLP
+# ==========================================
+# Note: For PyTorch (torch), it is highly recommended to install 
+# the specific CUDA version from the official website if using a local GPU.
+torch>=2.1.0
+transformers>=4.36.0
+accelerate>=0.25.0
+evaluate>=0.4.1
+
+# ==========================================
+# Utilities
+# ==========================================
+scikit-learn>=1.3.0
