@@ -60,7 +60,7 @@ Processes the BigVul dataset, applies normalization, deduplication, and augmenta
 This will save a clean Arrow-formatted dataset to disk.
 
 ```bash
-python src/dataset_aquisition.py
+python src/dataset_acquisition.py
 ```
 
 ### 2. **Tokenization**

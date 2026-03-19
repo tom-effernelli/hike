@@ -72,7 +72,7 @@ def run_training():
         per_device_eval_batch_size=config.TRAIN_BATCH_SIZE,
         num_train_epochs=config.NUM_EPOCHS,
         weight_decay=0.01,                  # Regularization to prevent overfitting
-        evaluation_strategy="epoch",        # Evaluate at the end of each epoch
+        eval_strategy="epoch",              # Evaluate at the end of each epoch
         save_strategy="epoch",              # Save a checkpoint at the end of each epoch
         load_best_model_at_end=True,        # Keep the best performing model based on eval
         metric_for_best_model="f1",         # Use F1-score to define "best"
